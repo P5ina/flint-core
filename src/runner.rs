@@ -107,11 +107,52 @@ impl<A: FlintAdapter> TestRunner<A> {
             }
         }
 
+        // Asserts with `within` that failed so far: (last tick to retry, action).
+        let mut pending: Vec<(u32, &ActionType)> = Vec::new();
+
         // Execute timeline tick by tick
         for tick in 0..=timeline.max_tick {
+            // Retry waiting asserts before this tick's own actions run
+            let mut still_pending = Vec::new();
+            for (deadline, action) in pending.drain(..) {
+                match execute_action(&mut *world, &mut player, action, tick) {
+                    Ok(ActionOutcome::AssertPassed) => {
+                        result.add_assertion(AssertionResult::Success(tick));
+                    }
+                    Ok(ActionOutcome::AssertFailed(_)) if tick < deadline => {
+                        still_pending.push((deadline, action));
+                    }
+                    Ok(ActionOutcome::AssertFailed(failures)) => {
+                        for fail in failures {
+                            result.add_assertion(AssertionResult::Failure(fail));
+                        }
+                        result.success = false;
+                        result.total_ticks = tick;
+                        result.execution_time_ms = start_time.elapsed().as_millis() as u64;
+                        return result;
+                    }
+                    Ok(ActionOutcome::Action) => {}
+                    Err(error) => {
+                        result.success = false;
+                        result.failure_reason = Some(error.to_string());
+                        result.total_ticks = tick;
+                        result.execution_time_ms = start_time.elapsed().as_millis() as u64;
+                        return result;
+                    }
+                }
+            }
+            pending = still_pending;
+
             // Execute actions for this tick
             if let Some(actions) = timeline.timeline.get(&tick) {
                 for (_test_idx, entry, _value_idx) in actions.iter() {
+                    let within = match entry.action_type {
+                        ActionType::Assert {
+                            within: Some(within),
+                            ..
+                        } if within > 0 => Some(within),
+                        _ => None,
+                    };
                     match execute_action(&mut *world, &mut player, &entry.action_type, tick) {
                         Err(error) => {
                             result.success = false;
@@ -123,6 +164,9 @@ impl<A: FlintAdapter> TestRunner<A> {
                         Ok(ActionOutcome::Action) => {}
                         Ok(ActionOutcome::AssertPassed) => {
                             result.add_assertion(AssertionResult::Success(tick));
+                        }
+                        Ok(ActionOutcome::AssertFailed(_)) if within.is_some() => {
+                            pending.push((tick + within.unwrap_or(0), &entry.action_type));
                         }
                         Ok(ActionOutcome::AssertFailed(failures)) => {
                             for fail in failures {
@@ -215,7 +259,7 @@ pub fn execute_action(
             Ok(ActionOutcome::Action)
         }
 
-        ActionType::Assert { checks } => {
+        ActionType::Assert { checks, .. } => {
             let mut failures = Vec::new();
             for check in checks {
                 match check {
@@ -643,5 +687,89 @@ mod entity_match_tests {
         };
 
         assert!(!entity_matches(&[matching, outside_tolerance], &expected));
+    }
+}
+
+#[cfg(test)]
+mod within_tests {
+    use super::*;
+
+    /// A world whose only block turns from air to stone once tick 5 has run.
+    struct DelayedStone {
+        tick: u64,
+    }
+
+    impl FlintWorld for DelayedStone {
+        fn do_tick(&mut self) -> Result<()> {
+            self.tick += 1;
+            Ok(())
+        }
+        fn current_tick(&self) -> u64 {
+            self.tick
+        }
+        fn get_time(&self) -> Result<u64> {
+            Ok(self.tick)
+        }
+        fn get_block(&self, _pos: [i32; 3], _nbt: &[String]) -> Result<Block> {
+            let id = if self.tick >= 5 {
+                "minecraft:stone"
+            } else {
+                "minecraft:air"
+            };
+            Ok(Block::new(id))
+        }
+        fn set_block(&mut self, _pos: [i32; 3], _block: &Block) -> Result<()> {
+            Ok(())
+        }
+        fn set_gamerule(
+            &mut self,
+            _rule: String,
+            _value: crate::test_spec::GameruleValue,
+        ) -> Result<()> {
+            Ok(())
+        }
+        fn create_player(&mut self) -> Box<dyn FlintPlayer> {
+            unreachable!("block-only test")
+        }
+    }
+
+    struct Adapter;
+
+    impl FlintAdapter for Adapter {
+        fn create_test_world(&self) -> Result<Box<dyn FlintWorld>> {
+            Ok(Box::new(DelayedStone { tick: 0 }))
+        }
+        fn server_info(&self) -> crate::traits::ServerInfo {
+            crate::traits::ServerInfo {
+                minecraft_version: "test".to_string(),
+            }
+        }
+    }
+
+    fn spec(within: Option<u32>) -> TestSpec {
+        let within = within.map_or(String::new(), |w| format!(r#", "within": {w}"#));
+        serde_json::from_str(&format!(
+            r#"{{
+                "flintVersion": "1.0.0",
+                "name": "within",
+                "setup": {{ "cleanup": {{ "region": [[0, 0, 0], [0, 0, 0]] }} }},
+                "timeline": [
+                    {{ "at": 1, "do": "assert", "checks": [
+                        {{ "pos": [0, 0, 0], "is": {{ "id": "minecraft:stone" }} }}
+                    ]{within} }}
+                ]
+            }}"#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn within_waits_for_the_condition() {
+        let runner = TestRunner::new(Arc::new(Adapter));
+        assert!(!runner.run_test(&spec(None)).success);
+        assert!(!runner.run_test(&spec(Some(3))).success);
+        let result = runner.run_test(&spec(Some(10)));
+        assert!(result.success, "{:?}", result.failure_reason);
+        assert_eq!(spec(Some(10)).max_tick(), 11);
     }
 }

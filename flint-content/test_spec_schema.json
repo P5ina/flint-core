@@ -535,6 +535,11 @@
                   ]
                 },
                 "description": "List of checks to perform"
+              },
+              "within": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Retry a failing assert every tick for up to this many ticks after `at`, for behavior that happens at a random time (mob AI)"
               }
             },
             "required": ["checks"],

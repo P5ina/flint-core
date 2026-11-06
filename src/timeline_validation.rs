@@ -224,7 +224,7 @@ pub fn validate_nbt_formatting(spec: &TestSpec) -> Result<()> {
                     check_nbt_values(nbt, &format!("timeline[{index}] fill"), &mut problems);
                 }
             }
-            ActionType::Assert { checks } => {
+            ActionType::Assert { checks, .. } => {
                 for check in checks {
                     match check {
                         AssertType::Entity(entity) => {
@@ -337,6 +337,7 @@ mod tests {
                 TimelineEntry {
                     at: TickSpec::Single(1),
                     action_type: ActionType::Assert {
+                        within: None,
                         checks: vec![AssertType::Block(BlockCheck {
                             pos: [0, 0, 0],
                             is: BlockSpec::Single(Block::new("minecraft:air")),
@@ -371,6 +372,7 @@ mod tests {
                 TimelineEntry {
                     at: TickSpec::Single(1),
                     action_type: ActionType::Assert {
+                        within: None,
                         checks: vec![AssertType::Block(BlockCheck {
                             pos: [0, 0, 0],
                             is: BlockSpec::Single(Block::new("minecraft:stone")),
@@ -398,6 +400,7 @@ mod tests {
                 TimelineEntry {
                     at: TickSpec::Single(1),
                     action_type: ActionType::Assert {
+                        within: None,
                         checks: vec![AssertType::Block(BlockCheck {
                             pos: [0, 0, 0],
                             is: BlockSpec::Single(Block::new("minecraft:stone")),
