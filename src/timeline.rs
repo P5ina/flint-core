@@ -200,6 +200,7 @@ mod tests {
         let entry = TimelineEntry {
             at: TickSpec::Multiple(vec![0, 5, 10]),
             action_type: ActionType::Assert {
+                within: None,
                 checks: vec![AssertType::Block(BlockCheck {
                     pos: [0, 0, 0],
                     is: BlockSpec::Single(Block {

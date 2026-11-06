@@ -576,6 +576,10 @@ pub enum ActionType {
     // Assertion actions
     Assert {
         checks: Vec<AssertType>,
+        /// Keep retrying a failing assert every tick for up to this many ticks
+        /// after `at`. For behavior that happens at a random time (mob AI).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        within: Option<u32>,
     },
 
     // Entity/player actions
@@ -647,6 +651,7 @@ impl<'de> Deserialize<'de> for ActionType {
             }
             "assert" => Ok(ActionType::Assert {
                 checks: take_required(&mut fields, "checks")?,
+                within: take_optional(&mut fields, "within")?,
             }),
             "tp" => Ok(ActionType::Tp {
                 entity_alias: take_required(&mut fields, "entity_alias")?,
@@ -885,7 +890,13 @@ impl TestSpec {
     pub fn max_tick(&self) -> u32 {
         self.timeline
             .iter()
-            .flat_map(|entry| entry.at.to_vec())
+            .flat_map(|entry| {
+                let within = match entry.action_type {
+                    ActionType::Assert { within, .. } => within.unwrap_or(0),
+                    _ => 0,
+                };
+                entry.at.to_vec().into_iter().map(move |tick| tick + within)
+            })
             .max()
             .unwrap_or(0)
     }
@@ -995,7 +1006,7 @@ impl TestSpec {
                         &region,
                     )?;
                 }
-                ActionType::Assert { checks } => {
+                ActionType::Assert { checks, .. } => {
                     for check in checks {
                         match check {
                             AssertType::Block(block) => {
