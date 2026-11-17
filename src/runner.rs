@@ -533,8 +533,9 @@ pub fn entity_matches(actual: &[EntityState], expected: &EntityCheck) -> bool {
 /// NBT has no boolean type: the vanilla SNBT parser turns the `true`/`false`
 /// keywords into the bytes `1b`/`0b`, so that's what servers report where a
 /// test spec writes `NoGravity: true`. Both keywords are mapped to their byte
-/// form (after trimming whitespace and surrounding quotes); everything else,
-/// including numeric type suffixes, is compared as written.
+/// form (after trimming whitespace and surrounding quotes). Compound keys are
+/// sorted, since NBT compounds are unordered; everything else, including
+/// numeric type suffixes and list order, is compared as written.
 fn normalize_entity_nbt_value(value: &str) -> String {
     let value = value.trim().trim_matches('"').trim();
     if value.eq_ignore_ascii_case("true") {
@@ -543,7 +544,7 @@ fn normalize_entity_nbt_value(value: &str) -> String {
     if value.eq_ignore_ascii_case("false") {
         return "0b".to_string();
     }
-    strip_unquoted_whitespace(value)
+    crate::snbt_order::sort_compound_keys(&strip_unquoted_whitespace(value))
 }
 
 /// Removes whitespace outside quoted segments, so `[I; 1, 2]` (vanilla
@@ -624,6 +625,19 @@ mod entity_match_tests {
         assert_ne!(
             normalize_entity_nbt_value("{name:'a b'}"),
             normalize_entity_nbt_value("{name:'ab'}")
+        );
+    }
+
+    #[test]
+    fn nbt_values_ignore_compound_key_order() {
+        // `/data get` prints keys in hash order; servers may sort them.
+        assert_eq!(
+            normalize_entity_nbt_value(r#"[{count: 1, Slot: 0b, id: "minecraft:glass_bottle"}]"#),
+            normalize_entity_nbt_value(r#"[{Slot:0b,count:1,id:"minecraft:glass_bottle"}]"#)
+        );
+        assert_ne!(
+            normalize_entity_nbt_value("[{Slot:0b},{Slot:1b}]"),
+            normalize_entity_nbt_value("[{Slot:1b},{Slot:0b}]")
         );
     }
 
