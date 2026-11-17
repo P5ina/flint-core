@@ -4,7 +4,7 @@
 //! to provide the actual block and player operations.
 
 use crate::Block;
-use crate::test_spec::{EntityNbt, GameMode, GameruleValue, Item, PlayerSlot};
+use crate::test_spec::{EntityNbt, GameMode, GameruleValue, Item, PlayerSlot, Weather};
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -82,6 +82,19 @@ pub trait FlintWorld: Send + Sync {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Set the daytime before the test runs, like `/time set <time>`: either a
+    /// tick count such as `"0"` or a time marker such as `"minecraft:midnight"`.
+    /// Default is a no-op, which leaves the adapter's own time.
+    fn set_time(&mut self, _time: &str) -> Result<()> {
+        Ok(())
+    }
+
+    /// Set the weather before the test runs, like `/weather <weather>`.
+    /// Default is a no-op, which leaves the adapter's own weather.
+    fn set_weather(&mut self, _weather: Weather) -> Result<()> {
         Ok(())
     }
 

@@ -69,6 +69,16 @@ impl<A: FlintAdapter> TestRunner<A> {
         let mut player: Option<Box<dyn FlintPlayer>> = None;
 
         if let Some(setup) = &spec.setup {
+            // Set time and weather
+            if let Err(error) = world
+                .set_time(&setup.world.time)
+                .and_then(|()| world.set_weather(setup.world.weather))
+            {
+                result.success = false;
+                result.failure_reason = Some(error.to_string());
+                return result;
+            }
+
             // Set gamerules
             for (rule, value) in &setup.world.gamerules {
                 if let Err(error) = world.set_gamerule(rule.clone(), value.clone()) {
