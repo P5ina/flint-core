@@ -3,6 +3,7 @@ pub mod index;
 pub mod loader;
 pub mod results;
 pub mod runner;
+mod snbt_order;
 pub mod spatial;
 pub mod test_spec;
 pub mod timeline;
